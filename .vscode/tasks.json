@@ -1,0 +1,135 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run current file (CUDA/C++)",
+            "type": "process",
+            "command": "/bin/bash",
+            "args": [
+                "-c",
+                "set -e; case \"${fileExtname}\" in .cu) compiler=/usr/local/cuda-13.0/bin/nvcc ;; .cpp|.cc|.cxx) compiler=g++ ;; *) echo '当前文件不是 .cu/.cpp/.cc/.cxx 文件' >&2; exit 2 ;; esac; \"$compiler\" -std=c++17 -O0 -g -I\"${workspaceFolder}/inc\" \"${file}\" -o \"${fileDirname}/${fileBasenameNoExtension}\" && \"${fileDirname}/${fileBasenameNoExtension}\""
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "problemMatcher": [
+                "$gcc",
+                {
+                    "owner": "nvcc",
+                    "fileLocation": [
+                        "relative",
+                        "${workspaceFolder}"
+                    ],
+                    "pattern": {
+                        "regexp": "^(.*\\.cu)\\((\\d+)\\):\\s*(warning|error|fatal error):\\s*(.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "severity": 3,
+                        "message": 4
+                    }
+                }
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": false,
+                "focus": true,
+                "close": false
+            }
+        },
+        {
+            "label": "Build current CUDA file",
+            "type": "process",
+            "command": "/bin/bash",
+            "args": [
+                "-c",
+                "set -e; /usr/local/cuda-13.0/bin/nvcc -std=c++17 -O0 -g -I\"${workspaceFolder}/inc\" \"${file}\" -o \"${fileDirname}/${fileBasenameNoExtension}\""
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "problemMatcher": [
+                "$gcc",
+                {
+                    "owner": "nvcc",
+                    "fileLocation": [
+                        "relative",
+                        "${workspaceFolder}"
+                    ],
+                    "pattern": {
+                        "regexp": "^(.*\\.cu)\\((\\d+)\\):\\s*(warning|error|fatal error):\\s*(.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "severity": 3,
+                        "message": 4
+                    }
+                }
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": false,
+                "focus": true,
+                "close": false
+            }
+        },
+        {
+            "label": "Run current CUDA file",
+            "type": "process",
+            "command": "/bin/bash",
+            "args": [
+                "-c",
+                "set -e; /usr/local/cuda-13.0/bin/nvcc -std=c++17 -O0 -g -I\"${workspaceFolder}/inc\" \"${file}\" -o \"${fileDirname}/${fileBasenameNoExtension}\" && \"${fileDirname}/${fileBasenameNoExtension}\""
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "problemMatcher": [
+                "$gcc",
+                {
+                    "owner": "nvcc",
+                    "fileLocation": [
+                        "relative",
+                        "${workspaceFolder}"
+                    ],
+                    "pattern": {
+                        "regexp": "^(.*\\.cu)\\((\\d+)\\):\\s*(warning|error|fatal error):\\s*(.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "severity": 3,
+                        "message": 4
+                    }
+                }
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": false,
+                "focus": true,
+                "close": false
+            }
+        },
+        {
+            "label": "Build current C++ file",
+            "type": "process",
+            "command": "/bin/bash",
+            "args": [
+                "-c",
+                "set -e; g++ -std=c++17 -O0 -g -I\"${workspaceFolder}/inc\" \"${file}\" -o \"${fileDirname}/${fileBasenameNoExtension}\""
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": false,
+                "focus": true,
+                "close": false
+            }
+        }
+    ]
+}

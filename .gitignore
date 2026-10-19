@@ -1,0 +1,47 @@
+# CMake build directories
+build/
+build-*/
+cmake-build-*/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+cmake_install.cmake
+install_manifest.txt
+Makefile
+compile_commands.json
+
+# Compiled artifacts
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+
+# CUDA artifacts
+*.ptx
+*.cubin
+*.fatbin
+*.nvvm
+
+# IDE and tooling caches
+.cache/
+.clangd/
+.vscode/ipch/
+.vscode/*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
