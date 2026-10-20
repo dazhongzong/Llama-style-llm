@@ -80,11 +80,34 @@ cmake --build build --parallel
     --max-new-tokens 64
 ```
 
+也可以使用 `--prompt -` 从标准输入读取一行文本，适合脚本或管道调用：
+
+```bash
+echo "Explain CUDA kernels in one sentence." | \
+    ./build/app --prompt - --max-new-tokens 64
+```
+
+直接在终端输入一行 prompt 后按回车即可开始生成：
+
+```bash
+./build/app --prompt - --max-new-tokens 64
+```
+
 如果不希望使用 SmolLM 的 chat template，可以使用原始 prompt：
 
 ```bash
 ./build/app --raw --prompt "Once upon a time" --max-new-tokens 32
 ```
+
+使用 `--chat` 可以进入持续对话模式。模型权重只加载一次，每轮会保留
+此前的 user/assistant 历史并重新执行 prompt prefill：
+
+```bash
+./build/app --chat --max-new-tokens 64
+```
+
+交互命令：`/help` 查看帮助，`/reset` 清空历史，`/exit` 或 `/quit` 退出。
+历史长度超过模型上下文时，使用 `/reset` 开始新的会话。
 
 生成需要可用且兼容的 NVIDIA 驱动。`configs/models.json` 中的模型目录必须
 同时包含 `config.json`、`model.safetensors` 和 `tokenizer.json`。

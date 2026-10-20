@@ -25,6 +25,19 @@ namespace
             "Explain how CUDA kernels are launched.";
         std::size_t max_new_tokens = 64;
         bool raw_prompt = false;
+        bool chat = false;
+    };
+
+    struct ChatMessage
+    {
+        std::string role;
+        std::string content;
+    };
+
+    struct GenerationResult
+    {
+        std::string text;
+        std::size_t token_count = 0;
     };
 
     void print_usage(const char *program)
@@ -33,9 +46,10 @@ namespace
             << "Usage: " << program << " [options]\n"
             << "\nOptions:\n"
             << "  --model NAME             Model name in configs/models.json\n"
-            << "  --prompt TEXT            User prompt\n"
+            << "  --prompt TEXT            User prompt; use '-' to read stdin\n"
             << "  --max-new-tokens N       Maximum generated tokens (default: 64)\n"
             << "  --raw                    Do not apply the chat template\n"
+            << "  --chat                   Start an interactive conversation\n"
             << "  --help                   Show this help\n";
     }
 
@@ -77,6 +91,11 @@ namespace
             if (argument == "--raw")
             {
                 options.raw_prompt = true;
+                continue;
+            }
+            if (argument == "--chat")
+            {
+                options.chat = true;
                 continue;
             }
 
@@ -158,7 +177,43 @@ namespace
         // TinyLlama's tokenizer_config.json uses the Llama chat template.
         return "<|user|>\n" +
                user_prompt +
-               "</s>\n<|assistant|>\n";
+                   "</s>\n<|assistant|>\n";
+    }
+
+    std::string make_chat_prompt(
+        const minillm::Tokenizer &tokenizer,
+        const std::vector<ChatMessage> &history)
+    {
+        std::string prompt;
+
+        if (tokenizer.has_special_token("<|im_start|>"))
+        {
+            prompt =
+                "<|im_start|>system\n"
+                "You are a helpful AI assistant named SmolLM, trained by Hugging Face"
+                "<|im_end|>\n";
+
+            for (const auto &message : history)
+            {
+                prompt += "<|im_start|>" + message.role + "\n";
+                prompt += message.content;
+                prompt += "<|im_end|>\n";
+            }
+            prompt += "<|im_start|>assistant\n";
+            return prompt;
+        }
+
+        for (const auto &message : history)
+        {
+            if (message.role == "user")
+                prompt += "<|user|>\n";
+            else
+                prompt += "<|assistant|>\n";
+            prompt += message.content;
+            prompt += "</s>\n";
+        }
+        prompt += "<|assistant|>\n";
+        return prompt;
     }
 
     std::size_t greedy_argmax(
@@ -182,78 +237,17 @@ namespace
         return best;
     }
 
-} // namespace
-
-int main(int argc, char **argv)
-{
-    try
+    GenerationResult generate_response(
+        const minillm::TransformerModel &model,
+        const minillm::ModelConfig &config,
+        const minillm::Tokenizer &tokenizer,
+        const std::vector<std::size_t> &prompt_tokens,
+        std::size_t max_new_tokens,
+        minillm::ModelWorkspace &workspace,
+        minillm::Tensor &cpu_logits)
     {
-        using namespace minillm;
+        minillm::DecodeSession session(config);
 
-        const GenerationOptions options =
-            parse_options(argc, argv);
-
-        const auto registry_path =
-            find_registry_path(argv[0]);
-        ModelRegistry registry(registry_path);
-        const ModelEntry selected =
-            registry.resolve(options.model_name);
-
-        std::cout << "[MODEL] " << selected.name << '\n'
-                  << "[PATH] " << selected.model_dir << '\n';
-
-        Tokenizer tokenizer(
-            selected.model_dir / "tokenizer.json");
-
-        const std::string formatted_prompt =
-            make_prompt(
-                tokenizer,
-                options.prompt,
-                options.raw_prompt);
-        const std::vector<std::size_t> prompt_tokens =
-            tokenizer.encode(formatted_prompt);
-
-        if (prompt_tokens.empty())
-            throw std::runtime_error("Prompt produced no tokens");
-
-        // Read the model context length first, then size the KV cache for
-        // prompt + generated tokens.
-        const ModelConfig metadata =
-            load_model_config(selected.config_file, 1);
-        const std::size_t required_tokens =
-            prompt_tokens.size() + options.max_new_tokens;
-
-        if (required_tokens > metadata.max_position_embeddings)
-        {
-            throw std::invalid_argument(
-                "Prompt and generation length exceed model context: " +
-                std::to_string(required_tokens) + " > " +
-                std::to_string(metadata.max_position_embeddings));
-        }
-
-        const std::size_t kv_capacity = std::min(
-            metadata.max_position_embeddings,
-            std::max<std::size_t>(256, required_tokens));
-
-        const ModelConfig config =
-            load_model_config(selected.config_file, kv_capacity);
-
-        TransformerModel model(config);
-        SafeTensorsReader reader(selected.weights_file);
-        load_model_weights(model, config, reader);
-
-        DecodeSession session(config);
-        ModelWorkspace workspace(config);
-        Tensor cpu_logits(
-            {config.vocab_size},
-            DataType::FLOAT32,
-            DeviceType::CPU);
-
-        std::cout << "[PROMPT] " << options.prompt << '\n'
-                  << "[OUTPUT] ";
-        std::cout.flush();
-
-        // Prefill: execute each prompt token and append it to the KV cache.
         for (std::size_t position = 0;
              position < prompt_tokens.size();
              ++position)
@@ -266,11 +260,10 @@ int main(int argc, char **argv)
         }
 
         std::vector<std::size_t> generated;
-        generated.reserve(options.max_new_tokens);
+        generated.reserve(max_new_tokens);
 
-        // Decode: argmax(logits) -> next token -> KV cache -> next logits.
         for (std::size_t step = 0;
-             step < options.max_new_tokens;
+             step < max_new_tokens;
              ++step)
         {
             cpu_logits.copy_from(workspace.logits);
@@ -289,10 +282,202 @@ int main(int argc, char **argv)
                 workspace);
         }
 
-        std::cout << tokenizer.decode(generated)
-                  << '\n';
-        std::cout << "[GENERATED TOKENS] "
-                  << generated.size() << '\n';
+        return GenerationResult{
+            tokenizer.decode(generated),
+            generated.size()};
+    }
+
+} // namespace
+
+int main(int argc, char **argv)
+{
+    try
+    {
+        using namespace minillm;
+
+        const GenerationOptions options =
+            parse_options(argc, argv);
+
+        GenerationOptions resolved_options = options;
+        if (!resolved_options.chat &&
+            resolved_options.prompt == "-")
+        {
+            if (!std::getline(std::cin, resolved_options.prompt) ||
+                resolved_options.prompt.empty())
+            {
+                throw std::invalid_argument(
+                    "stdin prompt is empty");
+            }
+        }
+
+        const auto registry_path =
+            find_registry_path(argv[0]);
+        ModelRegistry registry(registry_path);
+        const ModelEntry selected =
+            registry.resolve(resolved_options.model_name);
+
+        std::cout << "[MODEL] " << selected.name << '\n'
+                  << "[PATH] " << selected.model_dir << '\n';
+
+        Tokenizer tokenizer(
+            selected.model_dir / "tokenizer.json");
+
+        const ModelConfig metadata =
+            load_model_config(selected.config_file, 1);
+
+        std::size_t kv_capacity =
+            metadata.max_position_embeddings;
+        if (!resolved_options.chat)
+        {
+            const std::string formatted_prompt =
+                make_prompt(
+                    tokenizer,
+                    resolved_options.prompt,
+                    resolved_options.raw_prompt);
+            const std::vector<std::size_t> prompt_tokens =
+                tokenizer.encode(formatted_prompt);
+
+            if (prompt_tokens.empty())
+                throw std::runtime_error("Prompt produced no tokens");
+
+            const std::size_t required_tokens =
+                prompt_tokens.size() + resolved_options.max_new_tokens;
+            if (required_tokens > metadata.max_position_embeddings)
+            {
+                throw std::invalid_argument(
+                    "Prompt and generation length exceed model context: " +
+                    std::to_string(required_tokens) + " > " +
+                    std::to_string(metadata.max_position_embeddings));
+            }
+
+            kv_capacity = std::min(
+                metadata.max_position_embeddings,
+                std::max<std::size_t>(256, required_tokens));
+        }
+
+        if (resolved_options.chat && resolved_options.raw_prompt)
+            throw std::invalid_argument(
+                "--chat cannot be combined with --raw");
+
+        const ModelConfig config =
+            load_model_config(selected.config_file, kv_capacity);
+
+        TransformerModel model(config);
+        SafeTensorsReader reader(selected.weights_file);
+        load_model_weights(model, config, reader);
+
+        DecodeSession session(config);
+        ModelWorkspace workspace(config);
+        Tensor cpu_logits(
+            {config.vocab_size},
+            DataType::FLOAT32,
+            DeviceType::CPU);
+
+        if (resolved_options.chat)
+        {
+            std::vector<ChatMessage> history;
+            std::cout << "[CHAT] Type /exit or /quit to stop, "
+                         "/reset to clear history.\n";
+
+            while (true)
+            {
+                std::cout << "You> " << std::flush;
+                std::string user_text;
+                if (!std::getline(std::cin, user_text))
+                {
+                    std::cout << '\n';
+                    break;
+                }
+
+                if (user_text == "/exit" ||
+                    user_text == "/quit")
+                    break;
+
+                if (user_text == "/reset")
+                {
+                    history.clear();
+                    std::cout << "[CHAT] History cleared.\n";
+                    continue;
+                }
+
+                if (user_text == "/help")
+                {
+                    std::cout << "[CHAT] Commands: /exit, /quit, "
+                                 "/reset, /help\n";
+                    continue;
+                }
+
+                if (user_text.empty())
+                    continue;
+
+                history.push_back({"user", user_text});
+                const std::string formatted_prompt =
+                    make_chat_prompt(tokenizer, history);
+                const std::vector<std::size_t> prompt_tokens =
+                    tokenizer.encode(formatted_prompt);
+                const std::size_t required_tokens =
+                    prompt_tokens.size() + resolved_options.max_new_tokens;
+
+                if (prompt_tokens.empty())
+                {
+                    history.pop_back();
+                    std::cout << "[ERROR] Prompt produced no tokens.\n";
+                    continue;
+                }
+
+                if (required_tokens > config.max_position_embeddings)
+                {
+                    history.pop_back();
+                    std::cout << "[ERROR] Conversation exceeds model "
+                                 "context. Use /reset to clear history.\n";
+                    continue;
+                }
+
+                const GenerationResult result =
+                    generate_response(
+                        model,
+                        config,
+                        tokenizer,
+                        prompt_tokens,
+                        resolved_options.max_new_tokens,
+                        workspace,
+                        cpu_logits);
+                history.push_back({"assistant", result.text});
+
+                std::cout << "Assistant> " << result.text << '\n'
+                          << "[GENERATED TOKENS] "
+                          << result.token_count << '\n';
+            }
+        }
+        else
+        {
+            const std::string formatted_prompt =
+                make_prompt(
+                    tokenizer,
+                    resolved_options.prompt,
+                    resolved_options.raw_prompt);
+            const std::vector<std::size_t> prompt_tokens =
+                tokenizer.encode(formatted_prompt);
+
+            if (prompt_tokens.empty())
+                throw std::runtime_error("Prompt produced no tokens");
+
+            const GenerationResult result =
+                generate_response(
+                    model,
+                    config,
+                    tokenizer,
+                    prompt_tokens,
+                    resolved_options.max_new_tokens,
+                    workspace,
+                    cpu_logits);
+
+            std::cout << "[PROMPT] " << resolved_options.prompt << '\n'
+                      << "[OUTPUT] " << result.text << '\n'
+                      << "[GENERATED TOKENS] "
+                      << result.token_count << '\n';
+        }
+
         return 0;
     }
     catch (const std::exception &error)
