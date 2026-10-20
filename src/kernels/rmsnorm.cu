@@ -8,6 +8,34 @@
 
 namespace minillm
 {
+
+    namespace
+    {
+
+        void get_rmsnorm_shape(
+            const Tensor &input,
+            std::size_t &rows,
+            std::size_t &hidden)
+        {
+            if (input.ndim() == 1)
+            {
+                rows = 1;
+                hidden = input.shape()[0];
+            }
+            else if (input.ndim() == 2)
+            {
+                rows = input.shape()[0];
+                hidden = input.shape()[1];
+            }
+            else
+            {
+                throw std::invalid_argument(
+                    "RMSNorm input must have shape [H] or [rows, H]");
+            }
+        }
+
+    } // namespace
+
     constexpr int BLOCK_SIZE = 256;
     constexpr int WARP_SIZE = 32;
     constexpr int NUM_WARPS = BLOCK_SIZE / WARP_SIZE;

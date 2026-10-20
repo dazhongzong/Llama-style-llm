@@ -42,6 +42,18 @@ namespace minillm
     {
     }
 
+    void CudaKVCache::rewind_to(
+        std::size_t position)
+    {
+        if (position > capacity_)
+        {
+            throw std::out_of_range(
+                "Cannot rewind KV cache beyond capacity");
+        }
+
+        next_pos_ = position;
+    }
+
     void CudaKVCache::append_async(
         const Tensor &key,
         const Tensor &value,

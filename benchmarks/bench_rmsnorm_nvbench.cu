@@ -63,9 +63,12 @@ void bench_rmsnorm(nvbench::state &state)
     state.add_global_memory_reads<float>(rows * hidden + hidden);
     state.add_global_memory_writes<float>(rows * hidden);
 
-    state.exec([&](nvbench::launch &) {
-        minillm::rmsnorm_cuda(d_x, d_w, d_y);
-    });
+    state.exec(
+        nvbench::exec_tag::sync,
+        [&](nvbench::launch &)
+        {
+            minillm::rmsnorm_cuda(d_x, d_w, d_y);
+        });
 }
 
 } // namespace

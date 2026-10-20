@@ -52,7 +52,6 @@ FetchContent_MakeAvailable(nvbench)
 # benchmark 需要链接项目中的算子实现，但不会依赖根工程的 CMake target。
 file(GLOB_RECURSE CUDA_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_ROOT}/src/kernels/*.cu"
-    "${PROJECT_ROOT}/cuda/*.cu"
 )
 
 file(GLOB_RECURSE CXX_SOURCES CONFIGURE_DEPENDS
@@ -62,6 +61,8 @@ file(GLOB_RECURSE CXX_SOURCES CONFIGURE_DEPENDS
 )
 
 list(FILTER CXX_SOURCES EXCLUDE REGEX "/src/main\\.(cpp|cc|cxx)$")
+list(FILTER CXX_SOURCES EXCLUDE REGEX
+    "/src/minillm/generation/tokenizer\\.cpp$")
 
 file(GLOB_RECURSE PROJECT_HEADERS CONFIGURE_DEPENDS
     "${PROJECT_ROOT}/inc/*.h"

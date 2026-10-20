@@ -36,6 +36,10 @@ namespace minillm
             return next_pos_;
         }
 
+        // Reuse the already-filled prefix for benchmarking or a new
+        // generation branch. The cache contents are preserved.
+        void rewind_to(std::size_t position);
+
         std::size_t capacity() const noexcept
         {
             return capacity_;

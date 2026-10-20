@@ -65,14 +65,17 @@ namespace minillm
             throw std::runtime_error(
                 "RMSNorm weight not loaded");
 
-        const std::vector<std::size_t> expected{
-            hidden_size_};
+        const bool valid_input_shape =
+            input.shape() ==
+                std::vector<std::size_t>{hidden_size_} ||
+            (input.ndim() == 2 &&
+             input.shape()[1] == hidden_size_);
 
-        if (input.shape() != expected ||
-            output.shape() != expected)
+        if (!valid_input_shape ||
+            output.shape() != input.shape())
         {
             throw std::invalid_argument(
-                "RMSNormLayer expects [hidden_size]");
+                "RMSNormLayer expects [hidden_size] or [rows, hidden_size]");
         }
 
         rmsnorm_cuda_async(

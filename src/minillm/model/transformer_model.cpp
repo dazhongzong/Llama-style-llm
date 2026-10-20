@@ -77,16 +77,6 @@ namespace minillm
     {
         config_.validate();
 
-        // 第 47 课仍然使用之前的教学版 RoPE。
-        // 真实模型所需 HalfSplit 等规则尚未实现，
-        // 因此必须拒绝不支持的配置。
-        if (config_.rope_layout != RoPELayout::Interleaved ||
-            config_.rope_theta != 10000.0f)
-        {
-            throw std::logic_error(
-                "RoPE configuration is not supported yet");
-        }
-
         blocks_.reserve(config_.num_layers);
 
         for (std::size_t i = 0;
@@ -99,7 +89,10 @@ namespace minillm
                     config_.num_q_heads,
                     config_.num_kv_heads,
                     config_.head_dim,
-                    config_.rms_norm_eps));
+                    config_.rms_norm_eps,
+                    RoPEConfig{
+                        config_.rope_theta,
+                        config_.rope_layout}));
         }
 
         // 对于未共享权重的模型，额外申请 LM Head

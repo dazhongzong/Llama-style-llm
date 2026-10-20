@@ -140,13 +140,14 @@ namespace minillm
         std::size_t hidden_size,
         std::size_t num_q_heads,
         std::size_t num_kv_heads,
-        std::size_t head_dim)
+        std::size_t head_dim,
+        RoPEConfig rope_config = {})
         : hidden_size_(positive(hidden_size)),
           num_q_heads_(positive(num_q_heads)),
           num_kv_heads_(
               checked_kv_heads(num_q_heads_, num_kv_heads)),
           head_dim_(checked_head_dim(head_dim)),
-
+          rope_config_(rope_config),
           q_proj_(
               hidden_size_,
               checked_mul(num_q_heads_, head_dim_)),
@@ -266,14 +267,14 @@ namespace minillm
             workspace.q,
             workspace.q_rope,
             position,
-            10000.0f,
+            rope_config_,
             stream);
 
         rope_cuda_async(
             workspace.k,
             workspace.k_rope,
             position,
-            10000.0f,
+            rope_config_,
             stream);
 
         // =================================================

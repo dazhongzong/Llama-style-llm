@@ -1,0 +1,16 @@
+{
+    "schema_version": 1,
+    "default_model": "smollm2-135m",
+    "models": {
+        "smollm2-135m": {
+            "path": "../models/SmolLM2-135M-Instruct",
+            "weight_file": "model.safetensors",
+            "format": "safetensors"
+        },
+        "tinyllama-1.1b-chat": {
+            "path": "../models/TinyLlama-1.1B-Chat-v1.0",
+            "weight_file": "model.safetensors",
+            "format": "safetensors"
+        }
+    }
+}

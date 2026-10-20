@@ -8,18 +8,28 @@
 inc/                 C++ 头文件
 inc/kernels/         CUDA 头文件
 src/                 C++ 源文件，例如 main.cpp、ops/*.cpp
-src/kernels/         推荐放置 CUDA 源文件
-cuda/                当前项目已有的 CUDA 源文件，CMake 也会自动收集
+src/kernels/         CUDA 源文件
 tests/               单元测试，每个源文件生成一个测试程序
 benchmarks/          NVBench benchmark 源文件
+configs/             模型注册和运行配置
+third_party/         Git 子模块依赖
 ```
 
 ## 环境要求
 
-- CMake >= 3.18
+- CMake >= 3.19
 - C++ 编译器，支持 C++20
 - CUDA Toolkit，当前配置使用 CUDA 17 语言标准
+- Rust 工具链（`cargo`），用于编译 `tokenizers-cpp` 的 Hugging Face tokenizer 后端
 - 可用的 NVIDIA 驱动和 CUDA 设备（运行 CUDA 测试时需要）
+
+Python 参考脚本使用 `uv` 管理依赖：
+
+- Python >= 3.10
+- uv
+- NumPy
+- PyTorch
+- Transformers
 
 检查工具：
 
@@ -27,13 +37,125 @@ benchmarks/          NVBench benchmark 源文件
 cmake --version
 nvcc --version
 g++ --version
+uv --version
 ```
+
+如果尚未安装 Rust，可以使用 rustup 安装 stable 工具链：
+
+```bash
+rustup toolchain install stable --profile minimal
+rustup default stable
+```
+
+## Python 依赖
+
+初始化虚拟环境并安装锁定依赖：
+
+```bash
+uv sync
+```
+
+使用项目环境运行模型检查脚本：
+
+```bash
+uv run python tools/inspect_model.py
+```
+
+导出 Transformers 参考 logits：
+
+```bash
+uv run python tests/reference/export_logits.py
+```
+
+## 文本生成
+
+`app` 通过 [tokenizers-cpp](https://github.com/mlc-ai/tokenizers-cpp) 读取模型的
+`tokenizer.json`，执行 chat template、prompt prefill，
+然后使用 KV Cache 进行 greedy 自回归生成：
+
+```bash
+cmake --build build --parallel
+./build/app \
+    --prompt "Explain CUDA kernels in one sentence." \
+    --max-new-tokens 64
+```
+
+如果不希望使用 SmolLM 的 chat template，可以使用原始 prompt：
+
+```bash
+./build/app --raw --prompt "Once upon a time" --max-new-tokens 32
+```
+
+生成需要可用且兼容的 NVIDIA 驱动。`configs/models.json` 中的模型目录必须
+同时包含 `config.json`、`model.safetensors` 和 `tokenizer.json`。
+
+首次拉取项目或更新依赖时，需要初始化 tokenizers-cpp 及其子模块：
+
+```bash
+git submodule update --init --recursive
+```
+
+添加或升级依赖：
+
+```bash
+uv add numpy
+uv add torch
+uv add transformers
+uv lock --upgrade
+uv sync
+```
+
+`uv.lock` 应提交到 Git，用于保证不同环境的依赖版本一致。
+
+## 模型 Decode Benchmark
+
+benchmark 默认使用已有的 SmolLM2-135M-Instruct。它测量单个增量 decode
+步骤，支持通过 `MINILLM_MODEL_DIR` 切换到 TinyLlama 等兼容的 LLaMA 模型。
+
+如果需要 TinyLlama 1.1B，先下载模型文件：
+
+```bash
+hf download TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
+    config.json tokenizer.json tokenizer_config.json model.safetensors \
+    --local-dir models/TinyLlama-1.1B-Chat-v1.0
+```
+
+构建独立 benchmark 工程：
+
+```bash
+cmake -S benchmarks -B build-benchmarks \
+    -DCMAKE_CUDA_ARCHITECTURES=80
+cmake --build build-benchmarks \
+    --target bench_transformer_decode --parallel
+```
+
+运行 SmolLM2 单 token decode benchmark：
+
+```bash
+./build-benchmarks/bench_transformer_decode
+```
+
+切换到 TinyLlama：
+
+```bash
+MINILLM_MODEL_DIR=models/TinyLlama-1.1B-Chat-v1.0 \
+    ./build-benchmarks/bench_transformer_decode
+```
+
+该 benchmark 会预填充 1、32、128、256 个 token，然后测量一个增量 decode
+步骤的 GPU 时间；模型加载和 prefill 不计入测量区间。
+
+已有 SmolLM2-135M-Instruct 在 NVIDIA GeForce RTX 5070 上的结果记录在
+[benchmarks/results/smollm2-135m-rtx5070.md](benchmarks/results/smollm2-135m-rtx5070.md)。
+TinyLlama-1.1B-Chat 的结果记录在
+[benchmarks/results/tinyllama-1.1b-rtx5070.md](benchmarks/results/tinyllama-1.1b-rtx5070.md)。
 
 ## 配置项目
 
 在项目根目录执行：
 
 ```bash
+git submodule update --init --recursive
 cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=80
 ```
 

@@ -1,0 +1,13 @@
+[project]
+name = "cuda-learning-tools"
+version = "0.1.0"
+description = "Python reference and model inspection tools for the CUDA learning project"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26,<3",
+    "torch>=2.5,<3",
+    "transformers>=4.45,<5",
+]
+
+[tool.uv]
+package = false

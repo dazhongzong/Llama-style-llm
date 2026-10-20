@@ -33,6 +33,12 @@ namespace minillm
             return caches_.size();
         }
 
+        void rewind_to(std::size_t position)
+        {
+            for (auto &cache : caches_)
+                cache->rewind_to(position);
+        }
+
         bool valid() const noexcept { return valid_; }
 
         void invalidate() noexcept { valid_ = false; }

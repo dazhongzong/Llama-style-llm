@@ -3,15 +3,9 @@
 
 #include <cstddef>
 #include <stdexcept>
-
+#include "minillm/ops/rope_config.h"
 namespace minillm
 {
-
-    enum class RoPELayout
-    {
-        Interleaved, // 相邻元素配对：当前教学版
-        HalfSplit    // 前后半维配对：真实 LLaMA 常见形式
-    };
 
     struct ModelConfig
     {

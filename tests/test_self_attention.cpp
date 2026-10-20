@@ -38,7 +38,7 @@ int main()
     constexpr std::size_t C = 4;
 
     // 1. 创建模块、Workspace 和 KV Cache
-    SelfAttention model(H, Hq, Hkv, D);
+    SelfAttention model(H, Hq, Hkv, D, RoPEConfig{10000.0f, RoPELayout::Interleaved});
 
     SelfAttentionWorkspace workspace(
         Hq, Hkv, D, C);

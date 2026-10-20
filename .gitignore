@@ -2,6 +2,23 @@
 /build/
 /build-*/
 /cmake-build-*/
+CMakeUserPresets.json
+
+# Local Codex/agent metadata
+/.agents/
+/.codex/
+.vscode/
+# Python and uv
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# models
+/models/
 
 # CMake generated files
 CMakeCache.txt

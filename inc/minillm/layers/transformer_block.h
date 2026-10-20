@@ -40,7 +40,8 @@ namespace minillm
             std::size_t num_q_heads,
             std::size_t num_kv_heads,
             std::size_t head_dim,
-            float rms_eps = 1e-5f);
+            float rms_eps = 1e-5f,
+            RoPEConfig rope_config = {});
 
         RMSNormLayer &input_norm() noexcept
         {

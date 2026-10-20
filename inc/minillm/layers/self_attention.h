@@ -6,7 +6,7 @@
 #include "minillm/layers/linear.h"
 #include "minillm/layers/cuda_kv_cache.h"
 #include "minillm/layers/attention_cuda.h"
-
+#include "minillm/ops/rope_config.h"
 namespace minillm
 {
 
@@ -38,7 +38,8 @@ namespace minillm
             std::size_t hidden_size,
             std::size_t num_q_heads,
             std::size_t num_kv_heads,
-            std::size_t head_dim);
+            std::size_t head_dim,
+            RoPEConfig rope_config);
 
         Linear &q_proj() noexcept { return q_proj_; }
         Linear &k_proj() noexcept { return k_proj_; }
@@ -70,6 +71,8 @@ namespace minillm
         Linear k_proj_;
         Linear v_proj_;
         Linear o_proj_;
+
+        RoPEConfig rope_config_;
     };
 
 } // namespace minillm

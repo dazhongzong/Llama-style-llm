@@ -85,7 +85,8 @@ namespace minillm
         std::size_t num_q_heads,
         std::size_t num_kv_heads,
         std::size_t head_dim,
-        float rms_eps)
+        float rms_eps,
+        RoPEConfig rope_config)
         : hidden_size_(positive(hidden_size)),
           intermediate_size_(positive(intermediate_size)),
 
@@ -95,7 +96,8 @@ namespace minillm
               hidden_size_,
               num_q_heads,
               num_kv_heads,
-              head_dim),
+              head_dim,
+              rope_config),
 
           post_attention_norm_(hidden_size_, rms_eps),
 
