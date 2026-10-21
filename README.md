@@ -66,8 +66,13 @@ echo "Explain CUDA kernels in one sentence." | \
 ./build/app \
     --model tinyllama-1.1b-chat \
     --chat \
-    --max-new-tokens 64
+    --max-new-tokens 64 \
+    --temperature 0.7 \
+    --top-k 50 \
+    --top-p 0.95
 ```
+
+`--temperature 0` 可以切换回确定性的 Greedy Decoding；`--seed` 用于复现采样结果。
 
 聊天命令：
 

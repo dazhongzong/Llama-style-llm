@@ -1,11 +1,15 @@
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
+#include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <random>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "config/model_registry.h"
@@ -24,6 +28,10 @@ namespace
         std::string prompt =
             "Explain how CUDA kernels are launched.";
         std::size_t max_new_tokens = 64;
+        float temperature = 0.7f;
+        std::size_t top_k = 50;
+        float top_p = 0.95f;
+        std::uint64_t seed = 42;
         bool raw_prompt = false;
         bool chat = false;
     };
@@ -48,6 +56,10 @@ namespace
             << "  --model NAME             Model name in configs/models.json\n"
             << "  --prompt TEXT            User prompt; use '-' to read stdin\n"
             << "  --max-new-tokens N       Maximum generated tokens (default: 64)\n"
+            << "  --temperature FLOAT      Sampling temperature; 0 means greedy (default: 0.7)\n"
+            << "  --top-k N                Keep only the top K tokens; 0 disables it (default: 50)\n"
+            << "  --top-p FLOAT            Nucleus sampling threshold (default: 0.95)\n"
+            << "  --seed N                Random seed (default: 42)\n"
             << "  --raw                    Do not apply the chat template\n"
             << "  --chat                   Start an interactive conversation\n"
             << "  --help                   Show this help\n";
@@ -64,6 +76,29 @@ namespace
             if (consumed != value.size())
                 throw std::invalid_argument("trailing characters");
             return static_cast<std::size_t>(result);
+        }
+        catch (const std::exception &)
+        {
+            throw std::invalid_argument(
+                std::string("Invalid value for ") + option +
+                ": " + value);
+        }
+    }
+
+    float parse_float(
+        const std::string &value,
+        const char *option)
+    {
+        try
+        {
+            std::size_t consumed = 0;
+            const float result = std::stof(value, &consumed);
+            if (consumed != value.size() ||
+                !std::isfinite(result))
+            {
+                throw std::invalid_argument("invalid float");
+            }
+            return result;
         }
         catch (const std::exception &)
         {
@@ -120,6 +155,40 @@ namespace
                 options.max_new_tokens = parse_size(
                     require_value("--max-new-tokens"),
                     "--max-new-tokens");
+            }
+            else if (argument == "--temperature")
+            {
+                options.temperature = parse_float(
+                    require_value("--temperature"),
+                    "--temperature");
+                if (options.temperature < 0.0f)
+                    throw std::invalid_argument(
+                        "--temperature must be non-negative");
+            }
+            else if (argument == "--top-k")
+            {
+                options.top_k = parse_size(
+                    require_value("--top-k"),
+                    "--top-k");
+            }
+            else if (argument == "--top-p")
+            {
+                options.top_p = parse_float(
+                    require_value("--top-p"),
+                    "--top-p");
+                if (options.top_p <= 0.0f ||
+                    options.top_p > 1.0f)
+                {
+                    throw std::invalid_argument(
+                        "--top-p must be in (0, 1]");
+                }
+            }
+            else if (argument == "--seed")
+            {
+                options.seed = static_cast<std::uint64_t>(
+                    parse_size(
+                        require_value("--seed"),
+                        "--seed"));
             }
             else
             {
@@ -237,12 +306,107 @@ namespace
         return best;
     }
 
+    std::size_t sample_next_token(
+        const minillm::Tensor &cpu_logits,
+        float temperature,
+        std::size_t top_k,
+        float top_p,
+        std::mt19937_64 &rng)
+    {
+        if (temperature == 0.0f)
+            return greedy_argmax(cpu_logits);
+
+        const float *values = cpu_logits.ptr<float>();
+        const std::size_t vocab_size =
+            cpu_logits.shape().at(0);
+
+        std::vector<std::pair<float, std::size_t>> candidates;
+        candidates.reserve(vocab_size);
+
+        for (std::size_t id = 0; id < vocab_size; ++id)
+        {
+            if (std::isfinite(values[id]))
+            {
+                candidates.emplace_back(values[id], id);
+            }
+        }
+
+        if (candidates.empty())
+            throw std::runtime_error(
+                "Logits contain no finite values");
+
+        std::sort(
+            candidates.begin(),
+            candidates.end(),
+            [](const auto &lhs, const auto &rhs)
+            {
+                return lhs.first > rhs.first;
+            });
+
+        if (top_k != 0 && candidates.size() > top_k)
+            candidates.resize(top_k);
+
+        const float max_logit = candidates.front().first;
+        std::vector<float> probabilities;
+        probabilities.reserve(candidates.size());
+
+        float probability_sum = 0.0f;
+        for (const auto &[logit, id] : candidates)
+        {
+            (void)id;
+            const float probability = std::exp(
+                (logit - max_logit) / temperature);
+            probabilities.push_back(probability);
+            probability_sum += probability;
+        }
+
+        std::size_t keep = probabilities.size();
+        if (top_p < 1.0f)
+        {
+            float cumulative = 0.0f;
+            for (std::size_t i = 0;
+                 i < probabilities.size();
+                 ++i)
+            {
+                cumulative += probabilities[i] / probability_sum;
+                if (cumulative >= top_p)
+                {
+                    keep = i + 1;
+                    break;
+                }
+            }
+        }
+
+        float selected_probability_sum = 0.0f;
+        for (std::size_t i = 0; i < keep; ++i)
+            selected_probability_sum += probabilities[i];
+
+        std::uniform_real_distribution<float> distribution(
+            0.0f,
+            selected_probability_sum);
+        const float target = distribution(rng);
+
+        float cumulative = 0.0f;
+        for (std::size_t i = 0; i < keep; ++i)
+        {
+            cumulative += probabilities[i];
+            if (target <= cumulative)
+                return candidates[i].second;
+        }
+
+        return candidates[keep - 1].second;
+    }
+
     GenerationResult generate_response(
         const minillm::TransformerModel &model,
         const minillm::ModelConfig &config,
         const minillm::Tokenizer &tokenizer,
         const std::vector<std::size_t> &prompt_tokens,
         std::size_t max_new_tokens,
+        float temperature,
+        std::size_t top_k,
+        float top_p,
+        std::mt19937_64 &rng,
         minillm::ModelWorkspace &workspace,
         minillm::Tensor &cpu_logits)
     {
@@ -268,7 +432,12 @@ namespace
         {
             cpu_logits.copy_from(workspace.logits);
             const std::size_t next_token =
-                greedy_argmax(cpu_logits);
+                sample_next_token(
+                    cpu_logits,
+                    temperature,
+                    top_k,
+                    top_p,
+                    rng);
 
             if (next_token == tokenizer.eos_token_id())
                 break;
@@ -366,12 +535,12 @@ int main(int argc, char **argv)
         SafeTensorsReader reader(selected.weights_file);
         load_model_weights(model, config, reader);
 
-        DecodeSession session(config);
         ModelWorkspace workspace(config);
         Tensor cpu_logits(
             {config.vocab_size},
             DataType::FLOAT32,
             DeviceType::CPU);
+        std::mt19937_64 rng(resolved_options.seed);
 
         if (resolved_options.chat)
         {
@@ -440,6 +609,10 @@ int main(int argc, char **argv)
                         tokenizer,
                         prompt_tokens,
                         resolved_options.max_new_tokens,
+                        resolved_options.temperature,
+                        resolved_options.top_k,
+                        resolved_options.top_p,
+                        rng,
                         workspace,
                         cpu_logits);
                 history.push_back({"assistant", result.text});
@@ -469,6 +642,10 @@ int main(int argc, char **argv)
                     tokenizer,
                     prompt_tokens,
                     resolved_options.max_new_tokens,
+                    resolved_options.temperature,
+                    resolved_options.top_k,
+                    resolved_options.top_p,
+                    rng,
                     workspace,
                     cpu_logits);
 
