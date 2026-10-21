@@ -20,6 +20,9 @@ __pycache__/
 # models
 /models/
 
+# Local demo source video; keep the compressed GIF in the repository
+/demo.mkv
+
 # CMake generated files
 CMakeCache.txt
 CMakeFiles/

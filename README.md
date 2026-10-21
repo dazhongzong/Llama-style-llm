@@ -3,6 +3,12 @@
 一个使用 CUDA/C++ 实现的 MiniLLM 推理项目，包含 Transformer 推理、CUDA
 算子、`tokenizers-cpp` 分词、单元测试和 NVBench benchmark。
 
+## 演示
+
+<p align="center">
+  <img src="assets/demo.gif" alt="MiniLLM demo" width="640">
+</p>
+
 ## 项目结构
 
 ```text
